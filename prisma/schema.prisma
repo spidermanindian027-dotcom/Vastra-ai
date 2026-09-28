@@ -1,0 +1,657 @@
+// ============================================================
+// VESTRA AI - Prisma Schema
+// "See it. Style it. Own it."
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────
+
+enum UserRole {
+  user
+  admin
+}
+
+enum GenderType {
+  male
+  female
+  non_binary
+  prefer_not_to_say
+}
+
+enum AgeGroup {
+  age_13_17 @map("13_17")
+  age_18_24 @map("18_24")
+  age_25_34 @map("25_34")
+  age_35_44 @map("35_44")
+  age_45_plus @map("45_plus")
+}
+
+enum BodyShape {
+  rectangle
+  triangle
+  inverted_triangle
+  hourglass
+  oval
+  apple
+}
+
+enum VisualBuild {
+  very_lean
+  lean
+  slim
+  slim_central_fullness
+  average
+  fit_toned
+  athletic
+  muscular
+  highly_muscular
+  stocky
+}
+
+enum MuscleDevelopment {
+  low
+  moderate
+  fit_defined
+  athletic
+  muscular
+  highly_muscular
+}
+
+enum ColourUndertone {
+  warm
+  cool
+  neutral
+  olive_neutral
+}
+
+enum WardrobeCategory {
+  shirt
+  t_shirt
+  top
+  pants
+  jeans
+  trousers
+  shorts
+  dress
+  skirt
+  jacket
+  overshirt
+  sweater
+  hoodie
+  shoes
+  boots
+  watch
+  sunglasses
+  cap
+  bag
+  jewellery
+  other_accessory
+}
+
+enum ClothingFit {
+  slim
+  regular
+  relaxed
+  oversized
+  tailored
+}
+
+enum FormalityLevel {
+  very_casual
+  casual
+  smart_casual
+  semi_formal
+  formal
+  black_tie
+}
+
+enum SeasonType {
+  spring
+  summer
+  autumn
+  winter
+  all_season
+}
+
+enum PatternType {
+  solid
+  striped
+  checkered
+  plaid
+  floral
+  polka_dot
+  graphic
+  abstract
+  camouflage
+  other
+}
+
+enum TryonStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+enum ErrorSeverity {
+  low
+  medium
+  high
+  critical
+}
+
+enum AIRequestType {
+  outfit_analysis
+  body_analysis
+  colour_analysis
+  clothing_classification
+  wardrobe_matching
+  style_chat
+  virtual_tryon
+  item_analysis
+  occasion_styling
+  image_quality_check
+}
+
+enum AIRequestStatus {
+  pending
+  processing
+  completed
+  failed
+  timeout
+}
+
+// ── Models ───────────────────────────────────────────────────
+
+model User {
+  id                   String    @id @default(uuid()) @db.Uuid
+  name                 String    @db.VarChar(255)
+  email                String    @unique @db.VarChar(255)
+  passwordHash         String    @map("password_hash") @db.VarChar(255)
+  role                 UserRole  @default(user)
+  isActive             Boolean   @default(true) @map("is_active")
+  emailVerified        Boolean   @default(false) @map("email_verified")
+  consentImageAnalysis Boolean   @default(false) @map("consent_image_analysis")
+  consentPrivacyPolicy Boolean   @default(false) @map("consent_privacy_policy")
+  lastLoginAt          DateTime? @map("last_login_at") @db.Timestamptz()
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  profile              UserProfile?
+  stylePreferences     StylePreference?
+  bodyProfile          BodyProfile?
+  colourProfile        ColourProfile?
+  sessions             Session[]
+  wardrobeItems        WardrobeItem[]
+  outfits              Outfit[]
+  outfitAnalyses       OutfitAnalysis[]
+  savedLooks           SavedLook[]
+  tryonGenerations     TryonGeneration[]
+  locationUsageEvents  LocationUsageEvent[]
+  aiRequests           AIRequest[]
+  usageEvents          UsageEvent[]
+  errorLogs            ErrorLog[]       @relation("ErrorUser")
+  resolvedErrors       ErrorLog[]       @relation("ErrorResolver")
+  adminAuditLogs       AdminAuditLog[]
+  styleChatMessages    StyleChatMessage[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique @db.VarChar(512)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz()
+  ipAddress String?  @map("ip_address") @db.VarChar(45)
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model UserProfile {
+  id                  String     @id @default(uuid()) @db.Uuid
+  userId              String     @unique @map("user_id") @db.Uuid
+  gender              GenderType?
+  ageGroup            AgeGroup?  @map("age_group")
+  primaryPhotoUrl     String?    @map("primary_photo_url")
+  primaryPhotoKey     String?    @map("primary_photo_key")
+  bio                 String?
+  onboardingCompleted Boolean    @default(false) @map("onboarding_completed")
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model StylePreference {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @unique @map("user_id") @db.Uuid
+  preferredStyles     String[] @default([]) @map("preferred_styles")
+  favouriteColours    String[] @default([]) @map("favourite_colours")
+  dislikedColours     String[] @default([]) @map("disliked_colours")
+  preferredFits       String[] @default([]) @map("preferred_fits")
+  favouriteBrands     String[] @default([]) @map("favourite_brands")
+  favouriteCategories String[] @default([]) @map("favourite_categories")
+  preferredAccessories String[] @default([]) @map("preferred_accessories")
+  preferredOccasions  String[] @default([]) @map("preferred_occasions")
+  styleNotes          String?  @map("style_notes")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("style_preferences")
+}
+
+model BodyProfile {
+  id                     String             @id @default(uuid()) @db.Uuid
+  userId                 String             @unique @map("user_id") @db.Uuid
+  visualBuild            VisualBuild?       @map("visual_build")
+  bodyShape              BodyShape?         @map("body_shape")
+  muscleDev              MuscleDevelopment? @map("muscle_dev")
+  shoulderProportion     String?            @map("shoulder_proportion") @db.VarChar(50)
+  waistProportion        String?            @map("waist_proportion") @db.VarChar(50)
+  hipProportion          String?            @map("hip_proportion") @db.VarChar(50)
+  recommendedSilhouettes String[]           @default([]) @map("recommended_silhouettes")
+  suggestedTops          String[]           @default([]) @map("suggested_tops")
+  suggestedBottoms       String[]           @default([]) @map("suggested_bottoms")
+  avoidStyles            String[]           @default([]) @map("avoid_styles")
+  confidence             Decimal?           @db.Decimal(5, 2)
+  analysisNotes          String?            @map("analysis_notes")
+  isUserCorrected        Boolean            @default(false) @map("is_user_corrected")
+  sourceImageUrl         String?            @map("source_image_url")
+  createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("body_profiles")
+}
+
+model ColourProfile {
+  id                String          @id @default(uuid()) @db.Uuid
+  userId            String          @unique @map("user_id") @db.Uuid
+  undertone         ColourUndertone?
+  bestColours       String[]        @default([]) @map("best_colours")
+  neutralColours    String[]        @default([]) @map("neutral_colours")
+  accentColours     String[]        @default([]) @map("accent_colours")
+  avoidColours      String[]        @default([]) @map("avoid_colours")
+  colourCombinations Json?          @default("[]") @map("colour_combinations")
+  confidence        Decimal?        @db.Decimal(5, 2)
+  isUserCorrected   Boolean         @default(false) @map("is_user_corrected")
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("colour_profiles")
+}
+
+model WardrobeItem {
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  name           String           @db.VarChar(255)
+  category       WardrobeCategory
+  imageUrl       String?          @map("image_url")
+  imageKey       String?          @map("image_key")
+  thumbnailUrl   String?          @map("thumbnail_url")
+  dominantColour String?          @map("dominant_colour") @db.VarChar(100)
+  secondaryColour String?         @map("secondary_colour") @db.VarChar(100)
+  pattern        PatternType      @default(solid)
+  texture        String?          @db.VarChar(100)
+  style          String?          @db.VarChar(100)
+  fit            ClothingFit?
+  formality      FormalityLevel?
+  season         SeasonType       @default(all_season)
+  brand          String?          @db.VarChar(255)
+  isFavourite    Boolean          @default(false) @map("is_favourite")
+  timesUsed      Int              @default(0) @map("times_used")
+  aiTags         Json?            @default("[]") @map("ai_tags")
+  metadata       Json?            @default("{}") @map("metadata")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outfitItems OutfitItem[]
+
+  @@index([userId])
+  @@index([category])
+  @@index([userId, category])
+  @@map("wardrobe_items")
+}
+
+model Outfit {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  name         String?  @db.VarChar(255)
+  imageUrl     String?  @map("image_url")
+  imageKey     String?  @map("image_key")
+  occasion     String?  @db.VarChar(255)
+  styleLabel   String?  @map("style_label") @db.VarChar(255)
+  colourPalette Json?   @default("[]") @map("colour_palette")
+  notes        String?
+  isSaved      Boolean  @default(false) @map("is_saved")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items      OutfitItem[]
+  analyses   OutfitAnalysis[]
+  savedLooks SavedLook[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("outfits")
+}
+
+model OutfitItem {
+  id              String  @id @default(uuid()) @db.Uuid
+  outfitId        String  @map("outfit_id") @db.Uuid
+  wardrobeItemId  String? @map("wardrobe_item_id") @db.Uuid
+  itemDescription String? @map("item_description")
+  position        Int     @default(0)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  outfit       Outfit        @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  wardrobeItem WardrobeItem? @relation(fields: [wardrobeItemId], references: [id], onDelete: SetNull)
+
+  @@index([outfitId])
+  @@index([wardrobeItemId])
+  @@map("outfit_items")
+}
+
+model OutfitAnalysis {
+  id                  String   @id @default(uuid()) @db.Uuid
+  outfitId            String   @map("outfit_id") @db.Uuid
+  userId              String   @map("user_id") @db.Uuid
+  overallScore        Decimal? @map("overall_score") @db.Decimal(4, 2)
+  styleLabel          String?  @map("style_label") @db.VarChar(255)
+  confidence          Decimal? @db.Decimal(5, 2)
+  goodPoints          Json?    @default("[]") @map("good_points")
+  badPoints           Json?    @default("[]") @map("bad_points")
+  improvements        Json?    @default("[]")
+  accessorySuggestions Json?   @default("[]") @map("accessory_suggestions")
+  shoeSuggestions     Json?    @default("[]") @map("shoe_suggestions")
+  colourSuggestions   Json?    @default("[]") @map("colour_suggestions")
+  styleTags           Json?    @default("[]") @map("style_tags")
+  upgradeLooks        Json?    @default("[]") @map("upgrade_looks")
+  aiModel             String?  @map("ai_model") @db.VarChar(100)
+  aiProvider          String?  @map("ai_provider") @db.VarChar(100)
+  rawResponse         Json?    @map("raw_response")
+  requestId           String?  @map("request_id") @db.Uuid
+  analysisDurationMs  Int?     @map("analysis_duration_ms")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  outfit         Outfit               @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scoreBreakdown OutfitScoreBreakdown?
+  savedLooks     SavedLook[]
+  recommendations StyleRecommendation[]
+
+  @@index([outfitId])
+  @@index([userId])
+  @@index([overallScore])
+  @@index([createdAt])
+  @@map("outfit_analyses")
+}
+
+model OutfitScoreBreakdown {
+  id                      String  @id @default(uuid()) @db.Uuid
+  analysisId              String  @unique @map("analysis_id") @db.Uuid
+  colourHarmonyScore      Decimal? @map("colour_harmony_score") @db.Decimal(4, 2)
+  fitProportionScore      Decimal? @map("fit_proportion_score") @db.Decimal(4, 2)
+  outfitCoordinationScore Decimal? @map("outfit_coordination_score") @db.Decimal(4, 2)
+  occasionScore           Decimal? @map("occasion_score") @db.Decimal(4, 2)
+  accessoriesScore        Decimal? @map("accessories_score") @db.Decimal(4, 2)
+  styleCoherenceScore     Decimal? @map("style_coherence_score") @db.Decimal(4, 2)
+  colourHarmonyWeight     Decimal  @default(0.20) @map("colour_harmony_weight") @db.Decimal(4, 2)
+  fitProportionWeight     Decimal  @default(0.25) @map("fit_proportion_weight") @db.Decimal(4, 2)
+  outfitCoordinationWeight Decimal @default(0.20) @map("outfit_coordination_weight") @db.Decimal(4, 2)
+  occasionWeight          Decimal  @default(0.15) @map("occasion_weight") @db.Decimal(4, 2)
+  accessoriesWeight       Decimal  @default(0.10) @map("accessories_weight") @db.Decimal(4, 2)
+  styleCoherenceWeight    Decimal  @default(0.10) @map("style_coherence_weight") @db.Decimal(4, 2)
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  analysis OutfitAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@map("outfit_score_breakdowns")
+}
+
+model StyleRecommendation {
+  id                  String  @id @default(uuid()) @db.Uuid
+  userId              String  @map("user_id") @db.Uuid
+  analysisId          String? @map("analysis_id") @db.Uuid
+  recommendationType  String  @map("recommendation_type") @db.VarChar(100)
+  title               String? @db.VarChar(255)
+  description         String?
+  items               Json?   @default("[]")
+  reason              String?
+  expectedImprovement String? @map("expected_improvement")
+  fromWardrobe        Boolean @default(false) @map("from_wardrobe")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  analysis OutfitAnalysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@map("style_recommendations")
+}
+
+model SavedLook {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  outfitId       String?  @map("outfit_id") @db.Uuid
+  analysisId     String?  @map("analysis_id") @db.Uuid
+  name           String?  @db.VarChar(255)
+  imageUrl       String?  @map("image_url")
+  score          Decimal? @db.Decimal(4, 2)
+  styleLabel     String?  @map("style_label") @db.VarChar(255)
+  occasion       String?  @db.VarChar(255)
+  colourPalette  Json?    @default("[]") @map("colour_palette")
+  feedbackSummary String? @map("feedback_summary")
+  isFavourite    Boolean  @default(false) @map("is_favourite")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outfit   Outfit?         @relation(fields: [outfitId], references: [id], onDelete: SetNull)
+  analysis OutfitAnalysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("saved_looks")
+}
+
+model TryonGeneration {
+  id                 String      @id @default(uuid()) @db.Uuid
+  userId             String      @map("user_id") @db.Uuid
+  sourcePhotoUrl     String      @map("source_photo_url")
+  sourceItems        Json?       @default("[]") @map("source_items")
+  wardrobeItemIds    String[]    @default([]) @map("wardrobe_item_ids") @db.Uuid
+  generatedImageUrl  String?     @map("generated_image_url")
+  generatedImageKey  String?     @map("generated_image_key")
+  status             TryonStatus @default(pending)
+  aiModel            String?     @map("ai_model") @db.VarChar(100)
+  aiProvider         String?     @map("ai_provider") @db.VarChar(100)
+  promptUsed         String?     @map("prompt_used")
+  promptVersion      String?     @map("prompt_version") @db.VarChar(50)
+  generationDurationMs Int?     @map("generation_duration_ms")
+  errorMessage       String?     @map("error_message")
+  metadata           Json?       @default("{}") @map("metadata")
+  createdAt          DateTime    @default(now()) @map("created_at") @db.Timestamptz()
+  completedAt        DateTime?   @map("completed_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("tryon_generations")
+}
+
+model Location {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(255)
+  city      String?  @db.VarChar(255)
+  region    String?  @db.VarChar(255)
+  country   String?  @db.VarChar(100)
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
+  timezone  String?  @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  usageEvents LocationUsageEvent[]
+
+  @@index([city])
+  @@map("locations")
+}
+
+model LocationUsageEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  locationId String?  @map("location_id") @db.Uuid
+  city       String?  @db.VarChar(255)
+  region     String?  @db.VarChar(255)
+  country    String?  @db.VarChar(100)
+  latitude   Decimal? @db.Decimal(10, 7)
+  longitude  Decimal? @db.Decimal(10, 7)
+  eventType  String   @map("event_type") @db.VarChar(100)
+  occasion   String?  @db.VarChar(255)
+  metadata   Json?    @default("{}") @map("metadata")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([city])
+  @@index([createdAt])
+  @@map("location_usage_events")
+}
+
+model AIRequest {
+  id              String          @id @default(uuid()) @db.Uuid
+  userId          String?         @map("user_id") @db.Uuid
+  requestType     AIRequestType   @map("request_type")
+  status          AIRequestStatus @default(pending)
+  aiProvider      String?         @map("ai_provider") @db.VarChar(100)
+  aiModel         String?         @map("ai_model") @db.VarChar(100)
+  promptTokens    Int?            @map("prompt_tokens")
+  completionTokens Int?           @map("completion_tokens")
+  totalTokens     Int?            @map("total_tokens")
+  durationMs      Int?            @map("duration_ms")
+  inputSummary    String?         @map("input_summary")
+  outputSummary   String?         @map("output_summary")
+  errorMessage    String?         @map("error_message")
+  requestId       String?         @default(uuid()) @map("request_id") @db.Uuid
+  metadata        Json?           @default("{}") @map("metadata")
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  completedAt     DateTime?       @map("completed_at") @db.Timestamptz()
+
+  user             User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  chatMessages     StyleChatMessage[]
+
+  @@index([userId])
+  @@index([requestType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("ai_requests")
+}
+
+model UsageEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  eventType String   @map("event_type") @db.VarChar(100)
+  eventData Json?    @default("{}") @map("event_data")
+  route     String?  @db.VarChar(255)
+  method    String?  @db.VarChar(10)
+  ipAddress String?  @map("ip_address") @db.VarChar(45)
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("usage_events")
+}
+
+model ErrorLog {
+  id         String        @id @default(uuid()) @db.Uuid
+  userId     String?       @map("user_id") @db.Uuid
+  errorType  String        @map("error_type") @db.VarChar(100)
+  message    String
+  stackTrace String?       @map("stack_trace")
+  route      String?       @db.VarChar(255)
+  method     String?       @db.VarChar(10)
+  requestId  String?       @map("request_id") @db.Uuid
+  severity   ErrorSeverity @default(medium)
+  browser    String?       @db.VarChar(255)
+  device     String?       @db.VarChar(255)
+  statusCode Int?          @map("status_code")
+  metadata   Json?         @default("{}") @map("metadata")
+  occurredAt DateTime      @default(now()) @map("occurred_at") @db.Timestamptz()
+  resolvedAt DateTime?     @map("resolved_at") @db.Timestamptz()
+  resolvedBy String?       @map("resolved_by") @db.Uuid
+
+  user     User? @relation("ErrorUser", fields: [userId], references: [id], onDelete: SetNull)
+  resolver User? @relation("ErrorResolver", fields: [resolvedBy], references: [id], onDelete: SetNull)
+
+  @@index([severity])
+  @@index([errorType])
+  @@index([occurredAt])
+  @@index([route])
+  @@map("error_logs")
+}
+
+model AdminAuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  adminId    String   @map("admin_id") @db.Uuid
+  action     String   @db.VarChar(255)
+  targetType String?  @map("target_type") @db.VarChar(100)
+  targetId   String?  @map("target_id") @db.Uuid
+  details    Json?    @default("{}") @map("details")
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  admin User @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("admin_audit_logs")
+}
+
+model StyleChatMessage {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  role        String   @db.VarChar(20)
+  content     String
+  imageUrl    String?  @map("image_url")
+  aiRequestId String?  @map("ai_request_id") @db.Uuid
+  metadata    Json?    @default("{}") @map("metadata")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiRequest AIRequest? @relation(fields: [aiRequestId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("style_chat_messages")
+}

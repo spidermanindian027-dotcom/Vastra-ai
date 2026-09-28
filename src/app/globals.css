@@ -1,26 +1,204 @@
 @import "tailwindcss";
 
+/* ============================================================
+   VESTRA AI - Global Styles
+   "See it. Style it. Own it."
+   ============================================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0d0d0d;
+  --foreground: #f5f0e8;
+  --surface: #1e1e1e;
+  --surface-hover: #252525;
+  --surface-active: #2a2a2a;
+  --border: rgba(255, 255, 255, 0.05);
+  --border-hover: rgba(255, 255, 255, 0.1);
+  --muted: #a0a0a0;
+  --muted-foreground: #737373;
+  --accent: #8b5cf6;
+  --accent-hover: #7c3aed;
+  --accent-foreground: #ffffff;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --destructive: #ef4444;
+  --ivory: #f5f0e8;
+  --silver: #c0c0c0;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-ivory: var(--ivory);
+  --color-silver: var(--silver);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #333 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #555;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Selection */
+::selection {
+  background: rgba(139, 92, 246, 0.3);
+  color: #fff;
+}
+
+/* Focus visible */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Smooth scroll */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Premium glass effect utility */
+.glass {
+  background: rgba(30, 30, 30, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glass-strong {
+  background: rgba(30, 30, 30, 0.85);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Gradient text utility */
+.gradient-text {
+  background: linear-gradient(135deg, #f5f0e8 0%, #8b5cf6 50%, #6366f1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-accent {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Shimmer loading animation */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* Pulse glow for accent elements */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(139, 92, 246, 0.4);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Score ring animation */
+@keyframes score-fill {
+  from {
+    stroke-dashoffset: 314;
+  }
+}
+
+.animate-score-fill {
+  animation: score-fill 1.5s ease-out forwards;
+}
+
+/* Floating animation */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Camera viewfinder guide */
+.camera-guide {
+  border: 2px dashed rgba(139, 92, 246, 0.5);
+  border-radius: 12px;
+}
+
+/* Input autofill override for dark theme */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 30px #1e1e1e inset !important;
+  -webkit-text-fill-color: #f5f0e8 !important;
+  caret-color: #f5f0e8;
 }
