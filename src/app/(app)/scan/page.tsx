@@ -9,6 +9,7 @@ import { ImageUpload } from '@/components/camera/image-upload';
 import { ScoreDisplay } from '@/components/outfit/score-display';
 import { AnalysisCard } from '@/components/outfit/analysis-card';
 import { UpgradeSuggestions } from '@/components/outfit/upgrade-suggestions';
+import { VastraMorphLoader } from '@/components/outfit/vastra-morph-loader';
 
 export default function ScanPage() {
   const [mode, setMode] = useState<'select' | 'camera' | 'upload'>('select');
@@ -214,23 +215,9 @@ export default function ScanPage() {
         </div>
       )}
 
-      {/* 4. ANALYZING SHIMMER STATE */}
+      {/* 4. VASTRA CLOTHES-MORPHING STUDIO ANALYZING STATE */}
       {isAnalyzing && (
-        <div className="flex flex-col items-center justify-center min-h-[400px] text-center space-y-6">
-          <div className="relative w-24 h-24">
-            <div className="absolute inset-0 rounded-full border-4 border-t-[#8b5cf6] border-r-transparent border-b-[#6366f1] border-l-transparent animate-spin" />
-            <div className="absolute inset-2 rounded-full border-4 border-t-transparent border-r-[#8b5cf6] border-b-transparent border-l-[#8b5cf6] animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
-            <Sparkles className="absolute inset-0 m-auto w-8 h-8 text-[#8b5cf6] animate-pulse" />
-          </div>
-          <div className="space-y-2">
-            <h2 className="text-2xl font-serif font-bold text-[#f5f0e8] animate-pulse">
-              VESTRA AI is Analyzing Your Look...
-            </h2>
-            <p className="text-sm text-gray-400 max-w-md mx-auto">
-              Scanning body proportions, calculating color harmony against your undertone, and grading styling coordination.
-            </p>
-          </div>
-        </div>
+        <VastraMorphLoader />
       )}
 
       {/* 5. REAL RESULT SCREEN */}

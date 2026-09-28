@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useCallback, useEffect } from "react";
-import { Camera, RefreshCw, X, User, Scan, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Camera, RefreshCw, X, User, Scan, AlertCircle, CheckCircle2, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Move } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function CameraCapture({ 
@@ -36,10 +36,11 @@ export function CameraCapture({
     timerDurationRef.current = timerDuration;
   }, [timerDuration]);
 
-  // Alignment status: RED (false) = improper, GREEN (true) = properly aligned (75-80%+)
+  // Alignment status & Real-time Directional Guidance
   const [isProperlyAligned, setIsProperlyAligned] = useState<boolean>(false);
   const [alignmentScore, setAlignmentScore] = useState<number>(0);
   const [alignmentMessage, setAlignmentMessage] = useState<string>("Position yourself inside the guide");
+  const [guidanceDirection, setGuidanceDirection] = useState<"UP" | "DOWN" | "LEFT" | "RIGHT" | "BACK" | "CLOSER" | "PERFECT" | "NONE">("NONE");
 
   const startCamera = useCallback(async () => {
     try {
@@ -306,16 +307,17 @@ export function CameraCapture({
             const expectedLowerPixels = Math.max(1, (checkEndRow - lowerStartY) * (w * 0.7));
             const lowerBodyRatio = lowerBodyActivity / expectedLowerPixels;
 
-            // Step 3: 75-80% Tolerance Evaluation
+            // Step 3: 75-80% Tolerance Evaluation & Directional Offsets
             let score = 0;
+            let dirCode: "UP" | "DOWN" | "LEFT" | "RIGHT" | "BACK" | "CLOSER" | "PERFECT" | "NONE" = "NONE";
 
             if (skinPixelsCount < 15 || faceStartY === -1) {
               score = 15;
               detectedProperly = false;
               message = "Position yourself in front of the camera";
+              dirCode = "NONE";
             } else if (currentMode === "half") {
               // --- HALF BODY (75% to 80% tolerance) ---
-              // Natural sitting or standing in front of webcam/phone
               // 1. Face in upper half (up to 30 pts)
               if (faceStartY >= 0 && faceStartY < h * 0.45) score += 30;
               else if (faceStartY < h * 0.60) score += 18;
@@ -332,19 +334,42 @@ export function CameraCapture({
               // 4. Centering (up to 10 pts)
               if (faceWidthRatio >= 0.12 && faceWidthRatio <= 0.70) score += 10;
 
+              // Spatial Center Offsets for Half Body (target: center X=0.50, Y=0.25)
+              const faceCenterX = (minSkinX + maxSkinX) / 2 / w;
+              const faceCenterY = (faceStartY + faceEndY) / 2 / h;
+              const dy = faceCenterY - 0.25;
+              const dx = faceCenterX - 0.50;
+
+              // Check Directional Guidance:
+              if (dy > 0.13) {
+                dirCode = "UP";
+                message = "⬆️ Move Up / Raise Camera";
+              } else if (dy < -0.10) {
+                dirCode = "DOWN";
+                message = "⬇️ Move Down / Lower Camera";
+              } else if (dx > 0.11) {
+                dirCode = "LEFT";
+                message = "⬅️ Move Left into center";
+              } else if (dx < -0.11) {
+                dirCode = "RIGHT";
+                message = "➡️ Move Right into center";
+              } else if (faceHeightRatio > 0.56) {
+                dirCode = "BACK";
+                message = "🔙 Lean / Step Back a few inches";
+              } else if (faceHeightRatio < 0.10) {
+                dirCode = "CLOSER";
+                message = "🚶 Move a little closer";
+              } else {
+                dirCode = "PERFECT";
+                message = `✓ Half Body Aligned (${Math.min(96, score)}%)! Hold still`;
+              }
+
               // 75-80% THRESHOLD:
-              if (score >= 75) {
+              if (score >= 75 && (dirCode === "PERFECT" || Math.abs(dy) <= 0.15)) {
                 detectedProperly = true;
                 message = `✓ Half Body Aligned (${Math.min(96, score)}%)! Hold still`;
-              } else if (faceHeightRatio > 0.58) {
-                detectedProperly = false;
-                message = "A bit too close! Lean back 1 ft";
-              } else if (lowerBodyRatio < 0.12) {
-                detectedProperly = false;
-                message = "Shoulders/chest not detected. Adjust camera";
               } else {
                 detectedProperly = false;
-                message = `Positioning: ${score}% (Need 75%+)`;
               }
             } else {
               // --- FULL BODY (75% to 80% tolerance) ---
@@ -372,20 +397,42 @@ export function CameraCapture({
               // 4. Centering (up to 15 pts)
               if (minSkinX > 2 && maxSkinX < w - 2) score += 15;
 
+              const faceCenterX = (minSkinX + maxSkinX) / 2 / w;
+              const faceCenterY = (faceStartY + faceEndY) / 2 / h;
+              const dy = faceCenterY - 0.16;
+              const dx = faceCenterX - 0.50;
+
+              if (dy > 0.14) {
+                dirCode = "UP";
+                message = "⬆️ Move Up / Raise Camera";
+              } else if (dy < -0.09) {
+                dirCode = "DOWN";
+                message = "⬇️ Move Down";
+              } else if (dx > 0.12) {
+                dirCode = "LEFT";
+                message = "⬅️ Move Left into outline";
+              } else if (dx < -0.12) {
+                dirCode = "RIGHT";
+                message = "➡️ Move Right into outline";
+              } else if (faceHeightRatio > 0.28) {
+                dirCode = "BACK";
+                message = "🔙 Step back 5-6 ft for full body";
+              } else {
+                dirCode = "PERFECT";
+                message = `✓ Full Body Aligned (${Math.min(96, score)}%)! Hold still`;
+              }
+
               // 75-80% THRESHOLD:
-              if (score >= 75) {
+              if (score >= 75 && (dirCode === "PERFECT" || Math.abs(dy) <= 0.16)) {
                 detectedProperly = true;
                 message = `✓ Full Body Aligned (${Math.min(96, score)}%)! Hold still`;
-              } else if (score < 45) {
-                detectedProperly = false;
-                message = "Step back 5-6 ft so full body fits outline";
               } else {
                 detectedProperly = false;
-                message = `Full Body: ${score}% (Need 75%+)`;
               }
             }
 
             setAlignmentScore(score);
+            setGuidanceDirection(dirCode);
 
             if (detectedProperly) {
               consecutiveAlignedFrames++;

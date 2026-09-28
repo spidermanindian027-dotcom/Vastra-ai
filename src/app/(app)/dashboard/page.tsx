@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [looks, setLooks] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>({ total: 4, highestScore: 9.2, averageScore: 8.6 });
+  const [stats, setStats] = useState<any>({ total: 0, highestScore: null, averageScore: null });
   const [loading, setLoading] = useState(true);
 
   const greeting = new Date().getHours() < 12 
@@ -33,35 +33,22 @@ export default function Dashboard() {
 
         if (looksRes?.success && Array.isArray(looksRes.data?.looks) && looksRes.data.looks.length > 0) {
           setLooks(looksRes.data.looks.slice(0, 3));
-          if (looksRes.data.stats) setStats(looksRes.data.stats);
+          if (looksRes.data.stats) {
+            setStats(looksRes.data.stats);
+          } else {
+            const scores = looksRes.data.looks.map((l: any) => l.score || 0);
+            const highest = Math.max(...scores);
+            const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+            setStats({
+              total: looksRes.data.looks.length,
+              highestScore: highest.toFixed(1),
+              averageScore: avg.toFixed(1)
+            });
+          }
         } else {
-          // Curated sample looks for initial inspiration
-          setLooks([
-            {
-              id: 'sample-1',
-              score: 9.2,
-              styleLabel: 'Street Minimal',
-              occasion: 'Everyday Chic',
-              date: 'Today',
-              imageUrl: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=600&q=80'
-            },
-            {
-              id: 'sample-2',
-              score: 8.8,
-              styleLabel: 'Smart Casual',
-              occasion: 'Gallery Night',
-              date: 'Yesterday',
-              imageUrl: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=600&q=80'
-            },
-            {
-              id: 'sample-3',
-              score: 8.5,
-              styleLabel: 'Tailored Neutral',
-              occasion: 'Café Meeting',
-              date: '2 days ago',
-              imageUrl: 'https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=600&q=80'
-            }
-          ]);
+          // Real clean empty state: No dummy data
+          setLooks([]);
+          setStats({ total: 0, highestScore: null, averageScore: null });
         }
       } finally {
         setLoading(false);
@@ -155,36 +142,55 @@ export default function Dashboard() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {looks.map((look, i) => (
-              <Link 
-                key={i} 
-                href="/looks"
-                className="group relative bg-[#1a1a1a] rounded-2xl overflow-hidden border border-white/10 hover:border-[#8b5cf6]/50 transition-all flex flex-col"
-              >
-                <div className="aspect-[3/4] w-full bg-[#0d0d0d] overflow-hidden relative">
-                  {look.imageUrl ? (
-                    <img 
-                      src={look.imageUrl} 
-                      alt="Look" 
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-xs text-gray-600">No Image</div>
-                  )}
-                  {/* Score badge */}
-                  <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md border border-[#8b5cf6]/30 text-white font-bold text-xs flex items-center gap-1 shadow-lg">
-                    <Star className="w-3 h-3 text-[#8b5cf6] fill-[#8b5cf6]" />
-                    {Number(look.score || 8.5).toFixed(1)}
-                  </div>
-                </div>
-                <div className="p-3.5 space-y-0.5">
-                  <div className="text-sm font-medium text-[#f5f0e8] truncate">{look.styleLabel || 'Curated Look'}</div>
-                  <div className="text-xs text-gray-400">{look.occasion || 'Everyday'}</div>
-                </div>
+          {looks.length === 0 ? (
+            <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl p-8 text-center flex flex-col items-center justify-center space-y-4">
+              <div className="w-16 h-16 rounded-full bg-[#8b5cf6]/10 border border-[#8b5cf6]/20 flex items-center justify-center text-[#8b5cf6]">
+                <Camera className="w-8 h-8" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-[#f5f0e8]">No outfits scanned yet</h3>
+                <p className="text-sm text-gray-400 max-w-sm mt-1">
+                  Capture or upload an outfit with our AI Studio to see your styling breakdown and scores.
+                </p>
+              </div>
+              <Link href="/scan">
+                <Button className="bg-[#8b5cf6] hover:bg-[#7c3aed] text-white rounded-full px-6">
+                  Scan Your First Look
+                </Button>
               </Link>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {looks.map((look, i) => (
+                <Link 
+                  key={i} 
+                  href="/looks"
+                  className="group relative bg-[#1a1a1a] rounded-2xl overflow-hidden border border-white/10 hover:border-[#8b5cf6]/50 transition-all flex flex-col"
+                >
+                  <div className="aspect-[3/4] w-full bg-[#0d0d0d] overflow-hidden relative">
+                    {look.imageUrl ? (
+                      <img 
+                        src={look.imageUrl} 
+                        alt="Look" 
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs text-gray-600">No Image</div>
+                    )}
+                    {/* Score badge */}
+                    <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md border border-[#8b5cf6]/30 text-white font-bold text-xs flex items-center gap-1 shadow-lg">
+                      <Star className="w-3 h-3 text-[#8b5cf6] fill-[#8b5cf6]" />
+                      {Number(look.score || 0).toFixed(1)}
+                    </div>
+                  </div>
+                  <div className="p-3.5 space-y-0.5">
+                    <div className="text-sm font-medium text-[#f5f0e8] truncate">{look.styleLabel || 'Curated Look'}</div>
+                    <div className="text-xs text-gray-400">{look.occasion || 'Everyday'}</div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Style Summary Card */}
@@ -195,7 +201,7 @@ export default function Dashboard() {
               <div className="space-y-1">
                 <span className="text-xs uppercase tracking-wider text-gray-400">Primary Aesthetic</span>
                 <div className="text-lg font-bold text-[#f5f0e8]">
-                  {user?.stylePreferences?.preferredStyles?.[0] || 'Minimalist Streetwear'}
+                  {user?.stylePreferences?.preferredStyles?.[0] || 'Calibrating...'}
                 </div>
               </div>
 
@@ -203,13 +209,13 @@ export default function Dashboard() {
                 <div>
                   <span className="text-xs text-gray-400 uppercase tracking-wider">Average Score</span>
                   <div className="text-3xl font-bold text-[#8b5cf6] mt-0.5">
-                    {stats.averageScore || '8.6'}
+                    {stats.averageScore ? stats.averageScore : '—'}
                   </div>
                 </div>
                 <div>
                   <span className="text-xs text-gray-400 uppercase tracking-wider">Highest Score</span>
                   <div className="text-3xl font-bold text-emerald-400 mt-0.5">
-                    {stats.highestScore || '9.2'}
+                    {stats.highestScore ? stats.highestScore : '—'}
                   </div>
                 </div>
               </div>
