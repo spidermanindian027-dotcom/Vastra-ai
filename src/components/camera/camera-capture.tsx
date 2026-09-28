@@ -20,14 +20,26 @@ export function CameraCapture({
   const [preview, setPreview] = useState<string | null>(null);
   
   // Modes & Timer States (User-selectable from top bar)
-  const [framingMode, setFramingMode] = useState<"full" | "half">("full");
+  const [framingMode, setFramingMode] = useState<"full" | "half">("half");
+  const framingModeRef = useRef<"full" | "half">("half");
   const [timerDuration, setTimerDuration] = useState<number>(3); // 3s, 5s, 10s
+  const timerDurationRef = useRef<number>(3);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [flash, setFlash] = useState<boolean>(false);
 
-  // Alignment status: RED (false) = improper/too close, GREEN (true) = properly aligned
+  // Sync refs with state
+  useEffect(() => {
+    framingModeRef.current = framingMode;
+  }, [framingMode]);
+
+  useEffect(() => {
+    timerDurationRef.current = timerDuration;
+  }, [timerDuration]);
+
+  // Alignment status: RED (false) = improper, GREEN (true) = properly aligned (75-80%+)
   const [isProperlyAligned, setIsProperlyAligned] = useState<boolean>(false);
-  const [alignmentMessage, setAlignmentMessage] = useState<string>("Step back so your body fits inside the outline");
+  const [alignmentScore, setAlignmentScore] = useState<number>(0);
+  const [alignmentMessage, setAlignmentMessage] = useState<string>("Position yourself inside the guide");
 
   const startCamera = useCallback(async () => {
     try {
@@ -63,7 +75,6 @@ export function CameraCapture({
   const poseRef = useRef<any>(null);
 
   useEffect(() => {
-    // Attempt loading MediaPipe Pose in background
     if (typeof window === "undefined") return;
 
     const script = document.createElement("script");
@@ -78,8 +89,8 @@ export function CameraCapture({
           pose.setOptions({
             modelComplexity: 0,
             smoothLandmarks: true,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
+            minDetectionConfidence: 0.45,
+            minTrackingConfidence: 0.45
           });
           poseRef.current = pose;
           setPoseDetectorLoaded(true);
@@ -100,28 +111,30 @@ export function CameraCapture({
     };
   }, []);
 
-  // Real-time Computer Vision Frame Analysis (Dual Engine: MediaPipe Skeletal + Anatomical CV)
+  // Real-time Computer Vision Frame Analysis (75-80% Tolerance Auto-Accept)
   useEffect(() => {
     if (preview || error || !stream) return;
 
     let animationFrameId: number;
     let consecutiveAlignedFrames = 0;
-    const requiredStableFrames = 25; // ~0.8-1.0s of continuous perfect alignment required
+    const requiredStableFrames = 6; // Quick ~180ms lock for responsive experience
+    let consecutiveMisalignedFrames = 0;
     let lastAnalysisTime = 0;
 
     const analyzeFrame = async (timestamp: number) => {
-      // Run analysis every ~60-80ms for high performance without dropping frames
-      if (timestamp - lastAnalysisTime > 70) {
+      if (timestamp - lastAnalysisTime > 65) {
         lastAnalysisTime = timestamp;
 
         const video = videoRef.current;
         const canvas = hiddenCanvasRef.current;
+        const currentMode = framingModeRef.current;
 
         if (video && canvas && video.readyState >= 2 && video.videoWidth > 0) {
           let detectedProperly = false;
+          let calculatedScore = 0;
           let message = "";
 
-          // --- ENGINE 1: MediaPipe Pose Landmark Detection if available ---
+          // --- ENGINE 1: MediaPipe Pose Landmark Detection if loaded ---
           if (poseRef.current && poseDetectorLoaded) {
             try {
               let poseResult: any = null;
@@ -137,84 +150,81 @@ export function CameraCapture({
                 const rightShoulder = lm[12];
                 const leftHip = lm[23];
                 const rightHip = lm[24];
-                const leftKnee = lm[25];
-                const rightKnee = lm[26];
                 const leftAnkle = lm[27];
                 const rightAnkle = lm[28];
 
-                if (framingMode === "half") {
-                  // Half Body Rules:
-                  // 1. Shoulders must be visible
-                  // 2. Hips/Waist MUST be visible in frame (y <= 0.95)
-                  // 3. Nose must not be too close (shoulder width not overflowing > 85% width)
-                  const shouldersVisible = leftShoulder.visibility > 0.55 && rightShoulder.visibility > 0.55;
-                  const hipsVisible = leftHip.visibility > 0.50 && rightHip.visibility > 0.50;
-                  const hipsInFrame = leftHip.y < 0.95 && rightHip.y < 0.95;
-                  const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x);
+                if (currentMode === "half") {
+                  // Half Body with 75-80% tolerance:
+                  // Face/Nose visible + Shoulders visible = SUCCESS!
+                  const headVisible = nose && nose.visibility > 0.45;
+                  const shouldersVisible = (leftShoulder && leftShoulder.visibility > 0.40) || 
+                                           (rightShoulder && rightShoulder.visibility > 0.40);
 
-                  if (!shouldersVisible) {
-                    detectedProperly = false;
-                    message = "Shoulders not detected! Step back 3-4 ft";
-                  } else if (shoulderWidth > 0.80) {
-                    detectedProperly = false;
-                    message = "Too close! Step back so your shoulders fit inside the outline";
-                  } else if (!hipsVisible || !hipsInFrame) {
-                    detectedProperly = false;
-                    message = "Waist not visible! Step back 3-4 ft until waist & hips are inside";
-                  } else if (nose.y < 0.05) {
-                    detectedProperly = false;
-                    message = "Head cut off at top! Lower camera or step back slightly";
-                  } else {
+                  if (headVisible && shouldersVisible) {
+                    calculatedScore = 85;
                     detectedProperly = true;
-                    message = "✓ Half body aligned properly! Hold still";
+                    message = "✓ Half Body Detected (85%)! Hold still";
+                  } else if (headVisible) {
+                    calculatedScore = 70;
+                    detectedProperly = false;
+                    message = "Shoulders not clearly seen. Position inside guide";
+                  } else {
+                    calculatedScore = 20;
+                    detectedProperly = false;
+                    message = "Position your face & shoulders in frame";
                   }
                 } else {
-                  // Full Body Rules:
-                  // 1. Nose, Shoulders, Hips, Knees, and Ankles MUST be visible
-                  // 2. Ankles must be inside frame (y <= 0.95)
-                  const headVisible = nose.visibility > 0.6;
-                  const kneesVisible = leftKnee.visibility > 0.5 && rightKnee.visibility > 0.5;
-                  const anklesVisible = leftAnkle.visibility > 0.5 && rightAnkle.visibility > 0.5;
-                  const anklesInFrame = leftAnkle.y < 0.96 && rightAnkle.y < 0.96;
+                  // Full Body with 75-80% tolerance:
+                  const headVisible = nose && nose.visibility > 0.45;
+                  const torsoVisible = (leftShoulder && leftShoulder.visibility > 0.4) || 
+                                       (leftHip && leftHip.visibility > 0.4);
+                  const legsVisible = (leftAnkle && leftAnkle.visibility > 0.35) || 
+                                      (rightAnkle && rightAnkle.visibility > 0.35) ||
+                                      (lm[25] && lm[25].visibility > 0.4); // knees
 
-                  if (!headVisible) {
-                    detectedProperly = false;
-                    message = "Face not visible! Look directly into camera";
-                  } else if (!kneesVisible) {
-                    detectedProperly = false;
-                    message = "Knees not visible! Step back 6-8 ft for Full Body";
-                  } else if (!anklesVisible || !anklesInFrame) {
-                    detectedProperly = false;
-                    message = "Feet not visible! Step back 6-8 ft until full body (head to shoes) fits";
-                  } else {
+                  if (headVisible && torsoVisible && legsVisible) {
+                    calculatedScore = 88;
                     detectedProperly = true;
-                    message = "✓ Full body aligned properly! Hold still";
+                    message = "✓ Full Body Detected (88%)! Hold still";
+                  } else if (headVisible && torsoVisible) {
+                    calculatedScore = 76;
+                    detectedProperly = true; // 75-80% tolerance accepts upper+lower!
+                    message = "✓ Full Body (~76%)! Hold still";
+                  } else {
+                    calculatedScore = 40;
+                    detectedProperly = false;
+                    message = "Step back 5-7 ft so full body fits outline";
                   }
                 }
 
-                // If MediaPipe evaluated, apply result and continue
+                setAlignmentScore(calculatedScore);
+
                 if (detectedProperly) {
                   consecutiveAlignedFrames++;
+                  consecutiveMisalignedFrames = 0;
                   if (consecutiveAlignedFrames >= requiredStableFrames) {
                     setIsProperlyAligned(true);
                     setAlignmentMessage(message);
                   }
                 } else {
                   consecutiveAlignedFrames = 0;
-                  setIsProperlyAligned(false);
-                  setAlignmentMessage(message);
+                  consecutiveMisalignedFrames++;
+                  // Hysteresis: only mark unaligned if failed for > 12 frames (~0.8s)
+                  if (consecutiveMisalignedFrames > 12) {
+                    setIsProperlyAligned(false);
+                    setAlignmentMessage(message);
+                  }
                 }
 
                 animationFrameId = requestAnimationFrame(analyzeFrame);
                 return;
               }
-            } catch (err) {
+            } catch {
               // Fallback to Engine 2
             }
           }
 
-          // --- ENGINE 2: Advanced Computer Vision Geometry & Anatomical Proportions ---
-          // Downsample frame to 80x100 for fast, zero-latency pixel scanning
+          // --- ENGINE 2: Advanced Anatomical Computer Vision with 75-80% Tolerance ---
           const ctx = canvas.getContext("2d", { willReadFrequently: true });
           if (ctx) {
             const w = 80;
@@ -231,8 +241,6 @@ export function CameraCapture({
             let minSkinX = w;
             let maxSkinX = 0;
             let skinPixelsCount = 0;
-
-            // Track skin pixels row by row
             const skinRows = new Array(h).fill(0);
 
             for (let y = 0; y < h; y++) {
@@ -247,7 +255,6 @@ export function CameraCapture({
                 const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
                 const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
 
-                // Skin pixel condition (works across all skin tones: light to dark)
                 const isSkin = cb >= 77 && cb <= 127 && cr >= 133 && cr <= 173 && yVal >= 35 && yVal <= 245;
 
                 if (isSkin) {
@@ -261,15 +268,11 @@ export function CameraCapture({
               }
             }
 
-            // Calculate face/head height as percentage of total frame height
-            const totalPixels = w * h;
-            const skinCoverage = skinPixelsCount / totalPixels;
-
-            // Find main face cluster boundaries (rows with >= 4 skin pixels)
+            // Find main face cluster boundaries
             let faceStartY = -1;
             let faceEndY = -1;
             for (let y = 0; y < h; y++) {
-              if (skinRows[y] >= 4) {
+              if (skinRows[y] >= 3) {
                 if (faceStartY === -1) faceStartY = y;
                 faceEndY = y;
               }
@@ -283,14 +286,13 @@ export function CameraCapture({
               ? (maxSkinX - minSkinX) / w
               : 0;
 
-            // Step 2: Detect Torso & Lower Body Activity below the face
-            // Scan rows below faceEndY down to bottom for clothing/body activity
+            // Step 2: Detect Torso & Clothing activity below face
             let lowerBodyActivity = 0;
-            const lowerStartY = Math.max(faceEndY, Math.floor(h * 0.40));
-            const checkEndRow = framingMode === "full" ? Math.floor(h * 0.95) : Math.floor(h * 0.85);
+            const lowerStartY = Math.max(faceEndY, Math.floor(h * 0.35));
+            const checkEndRow = currentMode === "full" ? Math.floor(h * 0.95) : Math.floor(h * 0.90);
 
             for (let y = lowerStartY; y < checkEndRow; y++) {
-              for (let x = Math.floor(w * 0.2); x < Math.floor(w * 0.8); x++) {
+              for (let x = Math.floor(w * 0.15); x < Math.floor(w * 0.85); x++) {
                 const idx = (y * w + x) * 4;
                 const r = data[idx];
                 const g = data[idx + 1];
@@ -301,68 +303,104 @@ export function CameraCapture({
                 }
               }
             }
-            const expectedLowerPixels = (checkEndRow - lowerStartY) * (w * 0.6);
-            const lowerBodyRatio = expectedLowerPixels > 0 ? lowerBodyActivity / expectedLowerPixels : 0;
+            const expectedLowerPixels = Math.max(1, (checkEndRow - lowerStartY) * (w * 0.7));
+            const lowerBodyRatio = lowerBodyActivity / expectedLowerPixels;
 
-            // Step 3: Evaluate against Selected Framing Option
-            if (skinPixelsCount < 30 || faceStartY === -1) {
-              // No person detected
+            // Step 3: 75-80% Tolerance Evaluation
+            let score = 0;
+
+            if (skinPixelsCount < 15 || faceStartY === -1) {
+              score = 15;
               detectedProperly = false;
-              message = "No person detected. Please step in front of the camera";
-            } else if (framingMode === "half") {
-              // --- HALF BODY CRITERIA ---
-              // In Half Body: Face height MUST be between 13% and 27% of frame height.
-              // In close-up selfie (like user's photo), face is > 45%!
-              if (faceHeightRatio > 0.28 || faceWidthRatio > 0.48) {
-                detectedProperly = false;
-                message = "Too close! Step back 3-4 ft so your waist and shoulders fit inside outline";
-              } else if (faceHeightRatio < 0.11) {
-                detectedProperly = false;
-                message = "Too far for Half Body! Step a little closer to the guide";
-              } else if (faceStartY < 3) {
-                detectedProperly = false;
-                message = "Head is cut off at the top! Tilt camera down or step back slightly";
-              } else if (lowerBodyRatio < 0.45) {
-                detectedProperly = false;
-                message = "Waist not detected! Step back until your waist is visible inside the outline";
-              } else {
+              message = "Position yourself in front of the camera";
+            } else if (currentMode === "half") {
+              // --- HALF BODY (75% to 80% tolerance) ---
+              // Natural sitting or standing in front of webcam/phone
+              // 1. Face in upper half (up to 30 pts)
+              if (faceStartY >= 0 && faceStartY < h * 0.45) score += 30;
+              else if (faceStartY < h * 0.60) score += 18;
+
+              // 2. Face scale (up to 35 pts) - comfortably permits 12% to 48% height
+              if (faceHeightRatio >= 0.12 && faceHeightRatio <= 0.48) score += 35;
+              else if (faceHeightRatio > 0.48 && faceHeightRatio <= 0.58) score += 22;
+              else if (faceHeightRatio >= 0.08) score += 20;
+
+              // 3. Torso / Shoulders / Jersey (up to 25 pts)
+              if (lowerBodyRatio >= 0.25) score += 25;
+              else if (lowerBodyRatio >= 0.12) score += 18;
+
+              // 4. Centering (up to 10 pts)
+              if (faceWidthRatio >= 0.12 && faceWidthRatio <= 0.70) score += 10;
+
+              // 75-80% THRESHOLD:
+              if (score >= 75) {
                 detectedProperly = true;
-                message = "✓ Half body aligned properly! Hold still";
+                message = `✓ Half Body Aligned (${Math.min(96, score)}%)! Hold still`;
+              } else if (faceHeightRatio > 0.58) {
+                detectedProperly = false;
+                message = "A bit too close! Lean back 1 ft";
+              } else if (lowerBodyRatio < 0.12) {
+                detectedProperly = false;
+                message = "Shoulders/chest not detected. Adjust camera";
+              } else {
+                detectedProperly = false;
+                message = `Positioning: ${score}% (Need 75%+)`;
               }
             } else {
-              // --- FULL BODY CRITERIA ---
-              // In Full Body: Face height MUST be small (5% to 14% of frame height).
-              // Legs and feet must extend to bottom 90% of frame.
-              if (faceHeightRatio > 0.14 || faceWidthRatio > 0.26) {
-                detectedProperly = false;
-                message = "Too close! Step back 6-8 ft so your full body (head to feet) fits inside outline";
-              } else if (faceHeightRatio < 0.04) {
-                detectedProperly = false;
-                message = "Too far! Step a little closer so you fit the silhouette";
-              } else if (faceStartY < 2) {
-                detectedProperly = false;
-                message = "Head is too close to top! Tilt camera down or step back";
-              } else if (lowerBodyRatio < 0.40) {
-                detectedProperly = false;
-                message = "Legs/feet not visible! Step back 6-8 ft until shoes touch the bottom baseline";
-              } else {
+              // --- FULL BODY (75% to 80% tolerance) ---
+              // 1. Head / Face (up to 25 pts)
+              if (faceHeightRatio >= 0.05 && faceHeightRatio <= 0.24) score += 25;
+              else if (faceHeightRatio < 0.32) score += 15;
+
+              // 2. Torso (up to 30 pts)
+              if (lowerBodyRatio >= 0.25) score += 30;
+              else if (lowerBodyRatio >= 0.15) score += 18;
+
+              // 3. Lower body / legs (up to 30 pts)
+              const legRowStart = Math.floor(h * 0.60);
+              let legPixels = 0;
+              for (let y = legRowStart; y < Math.floor(h * 0.95); y++) {
+                for (let x = Math.floor(w * 0.2); x < Math.floor(w * 0.8); x++) {
+                  const idx = (y * w + x) * 4;
+                  if (data[idx] > 20 || data[idx + 1] > 20 || data[idx + 2] > 20) legPixels++;
+                }
+              }
+              const expectedLeg = (Math.floor(h * 0.95) - legRowStart) * (w * 0.6);
+              if (expectedLeg > 0 && legPixels / expectedLeg >= 0.20) score += 30;
+              else score += 16;
+
+              // 4. Centering (up to 15 pts)
+              if (minSkinX > 2 && maxSkinX < w - 2) score += 15;
+
+              // 75-80% THRESHOLD:
+              if (score >= 75) {
                 detectedProperly = true;
-                message = "✓ Full body aligned properly! Hold still";
+                message = `✓ Full Body Aligned (${Math.min(96, score)}%)! Hold still`;
+              } else if (score < 45) {
+                detectedProperly = false;
+                message = "Step back 5-6 ft so full body fits outline";
+              } else {
+                detectedProperly = false;
+                message = `Full Body: ${score}% (Need 75%+)`;
               }
             }
 
-            // Apply Consecutive Stability Lock:
-            // Must be continuously aligned for ~0.8s to turn GREEN and prevent false triggers
+            setAlignmentScore(score);
+
             if (detectedProperly) {
               consecutiveAlignedFrames++;
+              consecutiveMisalignedFrames = 0;
               if (consecutiveAlignedFrames >= requiredStableFrames) {
                 setIsProperlyAligned(true);
                 setAlignmentMessage(message);
               }
             } else {
               consecutiveAlignedFrames = 0;
-              setIsProperlyAligned(false);
-              setAlignmentMessage(message);
+              consecutiveMisalignedFrames++;
+              if (consecutiveMisalignedFrames > 12) {
+                setIsProperlyAligned(false);
+                setAlignmentMessage(message);
+              }
             }
           }
         }
@@ -373,7 +411,7 @@ export function CameraCapture({
 
     animationFrameId = requestAnimationFrame(analyzeFrame);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [preview, error, stream, framingMode, poseDetectorLoaded]);
+  }, [preview, error, stream, poseDetectorLoaded]);
 
   // Execute Capture logic
   const executeCapture = () => {
@@ -395,7 +433,7 @@ export function CameraCapture({
     }
   };
 
-  // When outline becomes GREEN (Properly Aligned), auto-start user's selected timer!
+  // When outline becomes GREEN (75-80% Alignment), auto-start user's selected timer!
   useEffect(() => {
     if (!isProperlyAligned || preview || countdown !== null) return;
 
@@ -416,7 +454,7 @@ export function CameraCapture({
     return () => clearInterval(interval);
   }, [isProperlyAligned, preview, timerDuration]);
 
-  // If user moves and breaks alignment during countdown, cancel countdown immediately and turn RED again
+  // If user moves and breaks alignment during countdown, cancel countdown
   useEffect(() => {
     if (!isProperlyAligned && countdown !== null) {
       setCountdown(null);
@@ -458,7 +496,12 @@ export function CameraCapture({
           {/* Half / Full Body Switch */}
           <div className="flex bg-black/75 backdrop-blur-md p-1 rounded-full border border-white/15 shadow-lg">
             <button
-              onClick={() => { setFramingMode("full"); setIsProperlyAligned(false); setCountdown(null); }}
+              onClick={() => { 
+                setFramingMode("full"); 
+                framingModeRef.current = "full"; 
+                setIsProperlyAligned(false); 
+                setCountdown(null); 
+              }}
               className={`px-3 py-1 text-[11px] font-medium rounded-full transition-all flex items-center gap-1 ${
                 framingMode === "full" ? "bg-[#8b5cf6] text-white shadow-sm" : "text-gray-400 hover:text-white"
               }`}
@@ -466,7 +509,12 @@ export function CameraCapture({
               <User className="w-3 h-3" /> Full Body
             </button>
             <button
-              onClick={() => { setFramingMode("half"); setIsProperlyAligned(false); setCountdown(null); }}
+              onClick={() => { 
+                setFramingMode("half"); 
+                framingModeRef.current = "half"; 
+                setIsProperlyAligned(false); 
+                setCountdown(null); 
+              }}
               className={`px-3 py-1 text-[11px] font-medium rounded-full transition-all flex items-center gap-1 ${
                 framingMode === "half" ? "bg-[#8b5cf6] text-white shadow-sm" : "text-gray-400 hover:text-white"
               }`}
@@ -480,7 +528,11 @@ export function CameraCapture({
             {[3, 5, 10].map((sec) => (
               <button
                 key={sec}
-                onClick={() => { setTimerDuration(sec); setCountdown(null); }}
+                onClick={() => { 
+                  setTimerDuration(sec); 
+                  timerDurationRef.current = sec; 
+                  setCountdown(null); 
+                }}
                 className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-all ${
                   timerDuration === sec ? "bg-white text-black shadow-sm" : "text-gray-400 hover:text-white"
                 }`}
@@ -556,20 +608,20 @@ export function CameraCapture({
                   <text x="50" y="98" fill={lineColor} fontSize="3" fontWeight="bold" textAnchor="middle">FEET LEVEL</text>
                 </svg>
               ) : (
-                /* HALF BODY OUTLINE */
+                /* HALF BODY OUTLINE - Natural webcam & sitting framing */
                 <svg 
-                  className="w-full h-full p-6 transition-all duration-300" 
+                  className="w-full h-full p-4 transition-all duration-300" 
                   style={{ filter: glowShadow }}
                   viewBox="0 0 100 100" 
                   preserveAspectRatio="none"
                 >
-                  {/* Head */}
-                  <ellipse cx="50" cy="24" rx="14" ry="16" stroke={lineColor} strokeWidth="2" strokeDasharray="3,3" fill="none" />
-                  {/* Shoulders & Chest */}
-                  <path d="M 14 46 C 26 38, 38 40, 50 40 C 62 40, 74 38, 86 46 L 80 88 L 20 88 Z" stroke={lineColor} strokeWidth="2" strokeDasharray="3,3" fill="none" />
-                  {/* Waistline Baseline */}
-                  <line x1="20" y1="88" x2="80" y2="88" stroke={lineColor} strokeWidth="1.5" strokeDasharray="2,2" />
-                  <text x="50" y="93" fill={lineColor} fontSize="3" fontWeight="bold" textAnchor="middle">WAISTLINE</text>
+                  {/* Head - comfortably accommodates user sitting at desk */}
+                  <ellipse cx="50" cy="25" rx="16" ry="19" stroke={lineColor} strokeWidth="2.5" strokeDasharray="3,3" fill="none" />
+                  {/* Shoulders & Upper Chest */}
+                  <path d="M 12 50 C 24 40, 36 42, 50 42 C 64 42, 76 40, 88 50 L 84 94 L 16 94 Z" stroke={lineColor} strokeWidth="2.5" strokeDasharray="3,3" fill="none" />
+                  {/* Chest / Waistline Baseline */}
+                  <line x1="16" y1="94" x2="84" y2="94" stroke={lineColor} strokeWidth="1.5" strokeDasharray="2,2" />
+                  <text x="50" y="98" fill={lineColor} fontSize="3" fontWeight="bold" textAnchor="middle">CHEST / WAIST LEVEL</text>
                 </svg>
               )}
 
